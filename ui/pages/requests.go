@@ -487,6 +487,7 @@ func (p *Requests) importFile() {
 			{Label: "JSON", Exts: []string{".json"}},
 			{Label: "YAML", Exts: []string{".yaml", ".yml"}},
 			{Label: "Proto", Exts: []string{".proto"}},
+			{Label: "WSDL", Exts: []string{".wsdl", ".xml"}},
 		},
 		OnConfirm: func(paths []string) {
 			if len(paths) == 0 {
@@ -503,6 +504,11 @@ func (p *Requests) importFile() {
 					p.err(err)
 					return
 				}
+			} else if strings.HasSuffix(strings.ToLower(path), ".wsdl") {
+				if err := importer.ImportWSDLFromFile(path, p.repo); err != nil {
+					p.err(err)
+					return
+				}
 			} else if err := importer.ImportPostmanCollectionFromFile(path, p.repo); err != nil {
 				data, readErr := os.ReadFile(path)
 				if readErr != nil {
@@ -510,8 +516,10 @@ func (p *Requests) importFile() {
 					return
 				}
 				if err2 := importer.ImportOpenAPISpec(data, p.repo); err2 != nil {
-					p.err(err)
-					return
+					if err3 := importer.ImportWSDL(data, p.repo, path); err3 != nil {
+						p.err(err)
+						return
+					}
 				}
 			}
 			_ = p.cat.Load()
@@ -524,7 +532,59 @@ func (p *Requests) importMenuItems() []ui.MenuItem {
 	return []ui.MenuItem{
 		{Label: "From file…", OnSelect: p.importFile},
 		{Label: "From curl command…", OnSelect: func() { p.importCurl(NodeRef{}) }},
+		{Label: "From WSDL URL…", OnSelect: p.importWSDLURL},
 	}
+}
+
+func (p *Requests) importWSDLURL() {
+	if p.dialogs == nil {
+		return
+	}
+	host := p.dialogs()
+	if host == nil {
+		return
+	}
+	ed := ui.NewEditor(nil, highlight.Noop{}, ui.WithSoftWrap(false))
+	var clipChecked bool
+	host.Show(ui.DialogOpts{
+		Title:  "Import WSDL from URL",
+		Width:  640,
+		Height: 240,
+		Body: func(c *ui.Ctx) ui.View {
+			if !clipChecked {
+				clipChecked = true
+				if clip := c.Clipboard(); clip != nil {
+					text := strings.TrimSpace(clip.Get())
+					if strings.HasPrefix(text, "http://") || strings.HasPrefix(text, "https://") {
+						ed.SetText(text)
+					}
+				}
+				ed.Focus()
+			}
+			th := c.Theme()
+			return ui.Column(
+				container.MutedParagraph("Enter the URL of the WSDL document (e.g. http://example.com/service?wsdl):"),
+				ui.ViewOf(ed).Grow(1),
+			).Gap(th.Spacing.S).Padding(th.Spacing.M).Grow(1)
+		},
+		OnDismiss: ed.Close,
+		Actions: []ui.DialogAction{
+			{Label: "Cancel", OnClick: ed.Close},
+			{Label: "Import", Primary: true, OnClick: func() {
+				rawURL := strings.TrimSpace(string(ed.Bytes()))
+				ed.Close()
+				if rawURL == "" {
+					return
+				}
+				if err := importer.ImportWSDLFromURL(rawURL, p.repo); err != nil {
+					p.err(err)
+					return
+				}
+				_ = p.cat.Load()
+				p.Rebuild()
+			}},
+		},
+	})
 }
 
 // importCurl asks for a curl command and saves it as a new request, inside the
