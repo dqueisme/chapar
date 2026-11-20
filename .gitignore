@@ -1,4 +1,28 @@
-dist
 .DS_Store
+# Binaries & build artifacts
+dist/
+/chapar
+/chapar-cli
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Dependencies
+vendor/
+
+# Go workspace & test artifacts
 go.work
 go.work.sum
+*.out
+coverage.txt
+*.pprof
+
+# OS & IDE
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*~
